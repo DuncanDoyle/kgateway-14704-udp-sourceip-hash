@@ -1,0 +1,44 @@
+# Mirrors what kgateway PR #14704 generates for a single-backend UDPRoute whose backend has a
+# BackendConfigPolicy with ringHash + sourceIP (golden: udp-routing/backend-policy-proxy.yaml).
+# BUG (suspected): the cluster-level hashPolicy takes precedence over udp_proxy.hash_policies,
+# but udp_proxy passes no stream info, so the cluster's sourceIp hash is empty -> random host.
+admin:
+  address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
+static_resources:
+  listeners:
+  - name: udp
+    address: { socket_address: { protocol: UDP, address: 0.0.0.0, port_value: 10000 } }
+    listener_filters:
+    - name: envoy.filters.udp_listener.udp_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.UdpProxyConfig
+        stat_prefix: udp
+        idle_timeout: 60s
+        hash_policies:
+        - source_ip: true                 # <-- set by the PR's Nov 2 fix
+        matcher:
+          on_no_match:
+            action:
+              name: route
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.Route
+                cluster: backends
+  clusters:
+  - name: backends
+    type: STRICT_DNS
+    load_balancing_policy:
+      policies:
+      - typed_extension_config:
+          name: envoy.load_balancing_policies.ring_hash
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.load_balancing_policies.ring_hash.v3.RingHash
+            consistent_hashing_lb_config:
+              hash_policy:
+              - connection_properties: { source_ip: true }   # <-- kept on the cluster by the BCP
+    load_assignment:
+      cluster_name: backends
+      endpoints:
+      - lb_endpoints:
+        - endpoint: { address: { socket_address: { protocol: UDP, address: backend-a, port_value: 9000 } } }
+        - endpoint: { address: { socket_address: { protocol: UDP, address: backend-b, port_value: 9000 } } }
+        - endpoint: { address: { socket_address: { protocol: UDP, address: backend-c, port_value: 9000 } } }

@@ -1,0 +1,20 @@
+# Envoy + 3 UDP echo backends (each replies with its own name) + 1 client with a fixed IP.
+services:
+  envoy:
+    image: envoyproxy/envoy:${ENVOY_VERSION:-v1.39.6}
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--concurrency", "1", "-l", "warn"]
+    volumes:
+      - ./envoy/${ENVOY_CONFIG:-envoy-kgateway-pr.yaml}:/etc/envoy/envoy.yaml:ro
+    depends_on: [backend-a, backend-b, backend-c]
+  backend-a:
+    image: alpine/socat:1.8.0.3
+    command: ["-d", "UDP4-RECVFROM:9000,fork", "SYSTEM:echo backend-a"]
+  backend-b:
+    image: alpine/socat:1.8.0.3
+    command: ["-d", "UDP4-RECVFROM:9000,fork", "SYSTEM:echo backend-b"]
+  backend-c:
+    image: alpine/socat:1.8.0.3
+    command: ["-d", "UDP4-RECVFROM:9000,fork", "SYSTEM:echo backend-c"]
+  client:
+    image: alpine/socat:1.8.0.3
+    entrypoint: ["sleep", "infinity"]

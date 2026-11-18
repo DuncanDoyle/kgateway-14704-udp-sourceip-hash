@@ -1,0 +1,40 @@
+# Control: identical to envoy-kgateway-pr.yaml, except the cluster's RingHash has NO hash_policy.
+# Expected: udp_proxy.hash_policies (source_ip) is used, so one client IP always hits one backend.
+admin:
+  address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
+static_resources:
+  listeners:
+  - name: udp
+    address: { socket_address: { protocol: UDP, address: 0.0.0.0, port_value: 10000 } }
+    listener_filters:
+    - name: envoy.filters.udp_listener.udp_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.UdpProxyConfig
+        stat_prefix: udp
+        idle_timeout: 60s
+        hash_policies:
+        - source_ip: true
+        matcher:
+          on_no_match:
+            action:
+              name: route
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.Route
+                cluster: backends
+  clusters:
+  - name: backends
+    type: STRICT_DNS
+    load_balancing_policy:
+      policies:
+      - typed_extension_config:
+          name: envoy.load_balancing_policies.ring_hash
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.load_balancing_policies.ring_hash.v3.RingHash
+            consistent_hashing_lb_config: {}   # <-- no cluster-level hash_policy
+    load_assignment:
+      cluster_name: backends
+      endpoints:
+      - lb_endpoints:
+        - endpoint: { address: { socket_address: { protocol: UDP, address: backend-a, port_value: 9000 } } }
+        - endpoint: { address: { socket_address: { protocol: UDP, address: backend-b, port_value: 9000 } } }
+        - endpoint: { address: { socket_address: { protocol: UDP, address: backend-c, port_value: 9000 } } }
